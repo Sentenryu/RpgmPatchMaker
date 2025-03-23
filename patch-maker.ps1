@@ -104,7 +104,6 @@ foreach ($comparedFile in $basicCompareResult) {
         $newVersionPath = RebasePath -file $comparedFile.Fullname -from $oldVersionFolder -to $newVersionFolder | Resolve-Path
 
         if ($null -ne $newVersionPath) {
-            <# Action to perform if the condition is true #>
             if (Test-Path -Path $newVersionPath) {            
                 # then we run another native powershell comparison tool to check if the files are equal. -ne means "not equal"
                 if ((Get-FileHash $comparedFile.Fullname).Hash -ne (Get-FileHash $newVersionPath).Hash) {
