@@ -49,15 +49,15 @@ function New-DirectoryIfNotExists {
 # script
 
 #first we grab all the files on the new and the old version
-$oldVersionFiles = Get-ChildItem -Recurse -path $oldVersionFolder -File
-$newVersionFiles = Get-ChildItem -Recurse -path $newVersionFolder -File
+$oldVersionFiles = Get-ChildItem -Recurse -LiteralPath $oldVersionFolder -File
+$newVersionFiles = Get-ChildItem -Recurse -LiteralPath $newVersionFolder -File
 
 #then use a handy powershell compare tool that tells us which files exist on only one of the directories and which exist on both
 # it will add the SideIndicator property to our file objects
 $basicCompareResult = Compare-Object -ReferenceObject $oldVersionFiles -DifferenceObject $newVersionFiles -IncludeEqual -PassThru
 
 # this is so there's no weirdness with relative paths
-$resolvedPatchFolder = Resolve-Path $patchOutputFolder
+$resolvedPatchFolder = Resolve-Path -LiteralPath $patchOutputFolder
 
 # here we build the file name for a script for deleting files that got removed in the newer version, since there's no way to do that
 # by copying files.
