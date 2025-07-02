@@ -40,7 +40,7 @@ function New-DirectoryIfNotExists {
     $fileDirectoryInPatchFolder = Split-Path $filePath -Parent
 
     #this checks if the directory path exists, -Not because we only have to do something if it doesn't
-    if (-Not (Test-Path -Path $fileDirectoryInPatchFolder -PathType Container)) {
+    if (-Not (Test-Path -LiteralPath $fileDirectoryInPatchFolder -PathType Container)) {
         #this creates the whole directory path. "| Out-Null" is just for the console output to not be messy
         New-Item -ItemType Directory -Path $fileDirectoryInPatchFolder | Out-Null
     }
@@ -80,7 +80,7 @@ foreach ($comparedFile in $basicCompareResult) {
         New-DirectoryIfNotExists $patchPath
 
         # copy the file from the new version to the patch folder.
-        Copy-Item $comparedFile.Fullname -Destination $patchPath
+        Copy-Item -literalPath $comparedFile.Fullname -Destination $patchPath
 
     }
     elseif ($comparedFile.SideIndicator -eq '<=') {
@@ -100,12 +100,12 @@ foreach ($comparedFile in $basicCompareResult) {
         # here the file exists in both versions, so it gets complicated.
 
         # first, the compare function gives us the old file path in this case, but we want the new one too, so build that path
-        $newVersionPath = RebasePath -file $comparedFile.Fullname -from $oldVersionFolder -to $newVersionFolder | Resolve-Path
+        $newVersionPath = Resolve-Path -LiteralPath (RebasePath -file $comparedFile.Fullname -from $oldVersionFolder -to $newVersionFolder)
 
         if ($null -ne $newVersionPath) {
-            if (Test-Path -Path $newVersionPath) {            
+            if (Test-Path -LiteralPath $newVersionPath) {            
                 # then we run another native powershell comparison tool to check if the files are equal. -ne means "not equal"
-                if ((Get-FileHash $comparedFile.Fullname).Hash -ne (Get-FileHash $newVersionPath).Hash) {
+                if ((Get-FileHash -LiteralPath $comparedFile.Fullname).Hash -ne (Get-FileHash -LiteralPath $newVersionPath).Hash) {
                     
                     # here we are sure we need to update the file, so we build the path in the patch folder
                     $patchPath = RebasePath -file $newVersionPath -from $newVersionFolder -to $resolvedPatchFolder
@@ -117,7 +117,7 @@ foreach ($comparedFile in $basicCompareResult) {
                     New-DirectoryIfNotExists $patchPath
                     
                     # and copy the new version of the file to the patch.
-                    Copy-Item $newVersionPath -Destination $patchPath
+                    Copy-Item -LiteralPath $newVersionPath -Destination $patchPath
                 }
             }
             else {
