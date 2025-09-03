@@ -1,5 +1,16 @@
 #parameters
 
+#list here any file patterns you want to ignore
+# example, to keep ignoring html files and start ignoring json files that start with the word "temp" the array should look like this:
+#$ignoredFiles = (
+#    '*.html',
+#    'temp*.json'
+#)
+
+$ignoredFiles = (
+    '*.html'
+)
+
 # the 3 paths bellow don't need to be in the same folder as the script, but it's way easier to track if they are.
 
 # a path to a folder containing the base version that's being updated
@@ -13,23 +24,6 @@ $newVersionFolder = '.\NewVersion\'
 # a path to a folder where the output will be generated
 # the script will copy a bunch of files there.
 $patchOutputFolder = '.\Patch\'
-
-
-#utility functions
-
-# helper function for changing the base path of a file. Example: 
-# -file C:\Data\scripts\index.js 
-# -from c:\Data\
-# -to c:\WebSite\
-# result should be: c:\WebSite\scripts\index.js
-function RebasePath {
-    param (
-        [string] $file,
-        [string] $from,
-        [string] $to
-    )
-    $file -replace [regex]::Escape((Resolve-Path $from)), $to
-}
 
 # helper function to check if the whole folder structure of the file path exists, if it doesn't it will be created.
 function New-DirectoryIfNotExists {
@@ -48,12 +42,12 @@ function New-DirectoryIfNotExists {
 
 # script
 
-#first we grab all the files on the new and the old version
-$oldVersionFiles = Get-ChildItem -Recurse -LiteralPath $oldVersionFolder -File
-$newVersionFiles = Get-ChildItem -Recurse -LiteralPath $newVersionFolder -File
+#first we grab all the file names on the new and the old version except the ignored ones
+$oldVersionFiles = Get-ChildItem -Recurse -Name $oldVersionFolder -File -Exclude $ignoredFiles
+$newVersionFiles = Get-ChildItem -Recurse -Name $newVersionFolder -File -Exclude $ignoredFiles
 
 #then use a handy powershell compare tool that tells us which files exist on only one of the directories and which exist on both
-# it will add the SideIndicator property to our file objects
+# it will add the SideIndicator property to our file names
 $basicCompareResult = Compare-Object -ReferenceObject $oldVersionFiles -DifferenceObject $newVersionFiles -IncludeEqual -PassThru
 
 # this is so there's no weirdness with relative paths
@@ -70,17 +64,19 @@ foreach ($comparedFile in $basicCompareResult) {
     if ($comparedFile.SideIndicator -eq '=>') {
         #here the file exists only on the new version, so add to the patch.
 
+        # get the path in the new version folder
+        $newVersionPath = [System.IO.Path]::Combine($newVersionFolder, $comparedFile)
         # define the path of the new file in the patch folder
-        $patchPath = RebasePath -file $comparedFile.Fullname -from $newVersionFolder -to $resolvedPatchFolder
+        $patchPath = [System.IO.Path]::Combine($resolvedPatchFolder, $comparedFile)
         
         #report what we are doing
-        Write-Host "New -> $($comparedFile.Fullname) -> $patchPath" -ForegroundColor Green
+        Write-Host "New -> $($newVersionPath) -> $patchPath" -ForegroundColor Green
 
         #ensure the path exists on the patch folder (copy doesn't like when the destination folder doesn't exist yet)
         New-DirectoryIfNotExists $patchPath
 
         # copy the file from the new version to the patch folder.
-        Copy-Item -literalPath $comparedFile.Fullname -Destination $patchPath
+        Copy-Item -literalPath $newVersionPath -Destination $patchPath
 
     }
     elseif ($comparedFile.SideIndicator -eq '<=') {
@@ -88,27 +84,26 @@ foreach ($comparedFile in $basicCompareResult) {
         # best we can do is generate a script that can be run to delete the files
 
         #report what we are doing
-        Write-Host "Removed -> $($comparedFile.Fullname)" -ForegroundColor Red
-
-        #grab a relative version of the file path, since the script will be run from the root folder of the game.
-        $patchPath = RebasePath -file $comparedFile.Fullname -from $oldVersionFolder -to ''
+        Write-Host "Removed -> $($comparedFile)" -ForegroundColor Red
 
         # write a line to the script with a cmd command to delete the file
-        Add-Content -Path $fileRemovalScriptPath -Value "del /f $($patchPath)"
+        Add-Content -Path $fileRemovalScriptPath -Value "del /f $($comparedFile)"
     }
     else {
         # here the file exists in both versions, so it gets complicated.
-
-        # first, the compare function gives us the old file path in this case, but we want the new one too, so build that path
-        $newVersionPath = Resolve-Path -LiteralPath (RebasePath -file $comparedFile.Fullname -from $oldVersionFolder -to $newVersionFolder)
-
+        
+        #first we grab the paths in both the old and new version
+        $oldVersionPath = [System.IO.Path]::Combine($oldVersionFolder, $comparedFile)
+        $newVersionPath = [System.IO.Path]::Combine($newVersionFolder, $comparedFile)
+        
+        #sanity check, with the old script there would be cases where the file doesn't actually exist, that should be fixed
         if ($null -ne $newVersionPath) {
-            if (Test-Path -LiteralPath $newVersionPath) {            
+            if (Test-Path -LiteralPath $newVersionPath) {
                 # then we run another native powershell comparison tool to check if the files are equal. -ne means "not equal"
-                if ((Get-FileHash -LiteralPath $comparedFile.Fullname).Hash -ne (Get-FileHash -LiteralPath $newVersionPath).Hash) {
+                if ((Get-FileHash -LiteralPath $oldVersionPath).Hash -ne (Get-FileHash -LiteralPath $newVersionPath).Hash) {
                     
-                    # here we are sure we need to update the file, so we build the path in the patch folder
-                    $patchPath = RebasePath -file $newVersionPath -from $newVersionFolder -to $resolvedPatchFolder
+                    #they aren't equal, create a path for the new version
+                    $patchPath = [System.IO.Path]::Combine($resolvedPatchFolder, $comparedFile)
                     
                     # report what we are doing
                     Write-Host "Changed -> $newVersionPath -> $patchPath" -ForegroundColor Yellow
@@ -121,10 +116,11 @@ foreach ($comparedFile in $basicCompareResult) {
                 }
             }
             else {
-                Write-Host "Error -> File reported as changed: $($comparedFile.Fullname) but there was no new version at $newVersionPath" -ForegroundColor Red
+                Write-Host "Error -> File reported as changed: $($comparedFile) but there was no new version at $newVersionPath" -ForegroundColor Red
             }
-        } else {
-            Write-Host "Error -> Could not build a path in the new version for the file: $($comparedFile.Fullname)" -ForegroundColor Red
+        }
+        else {
+            Write-Host "Error -> Could not build a path in the new version for the file: $($comparedFile)" -ForegroundColor Red
         }
     }
 }
